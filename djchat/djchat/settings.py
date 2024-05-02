@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     # Internal Apps
     "account",
     "server",
+    "webchat",
 ]
 
 MIDDLEWARE = [
@@ -147,8 +148,13 @@ SPECTACULAR_SETTINGS = {
     # OTHER SETTINGS
 }
 
-
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
+}

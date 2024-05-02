@@ -1,15 +1,13 @@
-from server.models import Server, Category
 from django.db.models import Count
-from rest_framework import viewsets
-from server.schema import server_list_docs
-from rest_framework.response import Response
-from server.serializers import ServerSerializer, CategorySerializer
-from rest_framework.exceptions import (
-    ValidationError,
-    AuthenticationFailed
-)
-from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema
+from rest_framework import viewsets
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from server.models import Category, Server
+from server.schema import server_list_docs
+from server.serializers import CategorySerializer, ServerSerializer
 
 
 class CategoryListViewSet(viewsets.ViewSet):
@@ -21,89 +19,82 @@ class CategoryListViewSet(viewsets.ViewSet):
         return Response(serializer.data)
 
 
-
 class ServerListViewSet(viewsets.ViewSet):
-    """
-    A ViewSet for retrieving a list of servers with optional filtering options.
-
-    Attributes:
-        queryset (QuerySet): The queryset containing all servers.
-
-    Methods:
-        list(request): Retrieves a list of servers based on optional query parameters.
-
-    Raises:
-        AuthenticationFailed: If the request is made by an unauthenticated user for specific filtering options.
-        ValidationError: If invalid query parameters are provided or if a server with the specified ID does not exist.
-    """
-
-    # permission_classes = [IsAuthenticated]
     queryset = Server.objects.all()
+    # permission_classes = [IsAuthenticated]
 
     @server_list_docs
     def list(self, request):
-        """
-        Retrieve a list of servers based on optional query parameters.
+        """Returns a list of servers filtered by various parameters.
 
-        - `category`: Filter servers by category name.
-        - `qty`: Limit the number of servers returned.
-        - `by_user`: Filter servers by the authenticated user if set to true.
-        - `by_server_id`: Filter servers by server ID.
-        - `with_num_members`: Include the number of members in each server if set to true.
+        This method retrieves a queryset of servers based on the query parameters
+        provided in the `request` object. The following query parameters are supported:
+
+        - `category`: Filters servers by category name.
+        - `qty`: Limits the number of servers returned.
+        - `by_user`: Filters servers by user ID, only returning servers that the user is a member of.
+        - `by_serverid`: Filters servers by server ID.
+        - `with_num_members`: Annotates each server with the number of members it has.
 
         Args:
-            request (Request): The HTTP request object.
+        request: A Django Request object containing query parameters.
 
         Returns:
-            Response: A JSON response containing a list of serialized server data.
+        A queryset of servers filtered by the specified parameters.
 
         Raises:
-            AuthenticationFailed: If the request is made by an unauthenticated user for specific filtering options.
-            ValidationError: If invalid query parameters are provided or if a server with the specified ID does not exist.
-        """
+        AuthenticationFailed: If the query includes the 'by_user' or 'by_serverid'
+            parameters and the user is not authenticated.
+        ValidationError: If there is an error parsing or validating the query parameters.
+            This can occur if the `by_serverid` parameter is not a valid integer, or if the
+            server with the specified ID does not exist.
 
-        category = request.query_params.get("category", None)
-        qty = request.query_params.get("qty", None)
+        Examples:
+        To retrieve all servers in the 'gaming' category with at least 5 members, you can make
+        the following request:
+
+            GET /servers/?category=gaming&with_num_members=true&num_members__gte=5
+
+        To retrieve the first 10 servers that the authenticated user is a member of, you can make
+        the following request:
+
+            GET /servers/?by_user=true&qty=10
+
+        """
+        category = request.query_params.get("category")
+        qty = request.query_params.get("qty")
         by_user = request.query_params.get("by_user") == "true"
-        by_server_id = request.query_params.get("by_server_id", None)
+        by_serverid = request.query_params.get("by_serverid")
         with_num_members = request.query_params.get(
             "with_num_members") == "true"
-
-        if by_user or by_server_id and not request.user.is_authenticated:
-            raise AuthenticationFailed(
-                "Authentication required for user-based filtering.")
 
         if category:
             self.queryset = self.queryset.filter(category__name=category)
 
         if by_user:
-            user_id = request.user.id
-            self.queryset = self.queryset.filter(owner=user_id)
+            if by_user and request.user.is_authenticated:
+                user_id = request.user.id
+                self.queryset = self.queryset.filter(member=user_id)
+            else:
+                raise AuthenticationFailed()
 
         if with_num_members:
-            self.queryset = self.queryset.annotate(
-                num_members=Count("members"))
+            self.queryset = self.queryset.annotate(num_members=Count("member"))
 
-        if qty:
-            try:
-                qty = int(qty)
-                if qty <= 0:
-                    raise ValueError("Quantity must be a positive integer.")
-                self.queryset = self.queryset[:qty]
-            except ValueError:
-                raise ValidationError(
-                    "Invalid value for 'qty' parameter. Must be a positive integer.")
+        if by_serverid:
+            # if not request.user.is_authenticated:
+            #     raise AuthenticationFailed()
 
-        if by_server_id:
             try:
-                by_server_id = int(by_server_id)
-                self.queryset = self.queryset.filter(id=by_server_id)
+                self.queryset = self.queryset.filter(id=by_serverid)
                 if not self.queryset.exists():
                     raise ValidationError(
-                        detail=f"Server with id {by_server_id} not found")
+                        detail=f"Server with id {by_serverid} not found")
             except ValueError:
-                raise ValidationError(
-                    "Invalid value for 'by_server_id' parameter. Must be an integer.")
+                raise ValidationError(detail="Server value error")
+
+        if qty:
+            self.queryset = self.queryset[: int(qty)]
 
         serializer = ServerSerializer(self.queryset, many=True, context={
                                       "num_members": with_num_members})
