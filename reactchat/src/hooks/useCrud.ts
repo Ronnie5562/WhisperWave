@@ -35,4 +35,4 @@ const useCrud = <T>(initalData: T[], apiURL: string): IuseCrud<T> => {
 
     return {fetchData, dataCRUD, error, isLoading}
 }
-export default useCrud
+export default useCrud;

@@ -24,4 +24,4 @@ const useAxiosWithInterceptor = (): AxiosInstance => {
     return jwtAxios;
 }
 
-export default useAxiosWithInterceptor
+export default useAxiosWithInterceptor;
